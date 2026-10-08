@@ -6,12 +6,13 @@ Projeto de estudo: um serviço de **chatbot de suporte a lojistas** em Node + Ty
 
 | Verificado | Não verificado (escrito, nunca executado) |
 |---|---|
-| `npm run typecheck` passa (TS strict) | Subir o `docker-compose` e o fluxo ponta a ponta |
-| `npm test`: 21 testes passam (retry, backoff, RRF, chunking, guardrails) | Consumer Kafka e worker SQS contra brokers reais |
-| | Adaptador da Anthropic (`src/llm/anthropic.ts`) |
-| | SQL híbrido (pgvector + tsvector), manifestos K8s, Dockerfile |
+| `npm run typecheck` passa (TS strict) | Worker SQS contra LocalStack real |
+| `npm test`: 21 testes passam (retry, backoff, RRF, chunking, guardrails) | Adaptador da Anthropic (`src/llm/anthropic.ts`) contra a API real |
+| `docker-compose` sobe e o fluxo ponta a ponta funciona (Kafka → consumer → Postgres) | Manifestos K8s e `Dockerfile` contra um cluster real |
+| Consumer Kafka contra broker real, incluindo idempotência (`claim`/`release` no Redis) | |
+| RAG: ingestão grava em `pgvector`, busca híbrida retorna, eval em 5/5 (100%) | |
 
-Trate o que não foi executado como "hipótese a depurar". Quando algo quebrar, esse é o exercício.
+O que não foi executado é tratado como risco conhecido, não escondido.
 
 ## Como subir
 
@@ -75,16 +76,9 @@ Guia completo passo a passo (infra, debug, queries no banco, teste de idempotên
 | Docker | `Dockerfile` | Multi-stage, `USER node`, `node` direto para receber SIGTERM | "Por que não `npm start` no CMD?" |
 | Kubernetes | `k8s/deployment.yaml` | Probes, requests/limits, rolling update, HPA, preStop | "OOMKilled: por quê?" |
 
-## Roteiro sugerido
+## Como explorar o projeto
 
-1. **Testes primeiro** (sem infra): `npm test`. Leia `retry.test.ts` e quebre algo de propósito.
-2. **Depure** um teste com breakpoint (`.vscode/launch.json` já tem a config pronta).
-3. **Suba a infra** e faça o fluxo `POST /dev/orders` até a linha no Postgres. Se não funcionar, depure: esse é o exercício.
-4. **Mate o consumer no meio** (`Ctrl+C`), republique o mesmo `eventId` e confirme que não duplica.
-5. **Force a DLQ**: publique um JSON inválido com `kafka-console-producer` e leia `lab.orders.v1.dlq`.
-6. **Quebre o Postgres** (`docker compose stop postgres`) e veja retry, backoff e DLQ.
-7. **RAG**: `npm run ingest`, pergunte no chat, depois mude `maxChars` e rode os evals.
-8. **LLM real**: `LLM_PROVIDER=anthropic` + chave. Observe `usage` nos logs e o loop de tools.
+`npm test` já cobre retry/backoff, RRF, chunking e guardrails sem precisar de nenhuma infra no ar. Subindo os containers, dá pra acompanhar o fluxo ponta a ponta com breakpoint (`.vscode/launch.json` já configurado): publicar um pedido no Kafka até a linha aparecer no Postgres, confirmar que repetir o mesmo `eventId` não duplica, forçar um payload inválido pra ver a DLQ em ação, ou derrubar o Postgres com a API no ar pra observar retry → backoff → DLQ sem o processo cair. Passo a passo completo, com comandos e o que esperar em cada um: [`docs/rodando-localmente.md`](docs/rodando-localmente.md).
 
 ## Limitações conhecidas (decisões deliberadas de escopo, não bugs)
 
@@ -95,3 +89,7 @@ Guia completo passo a passo (infra, debug, queries no banco, teste de idempotên
 - Sem migrações versionadas (`db/init.sql` só roda na criação do volume). Em produção: Flyway/Knex/Prisma migrate.
 - Sem rate limit por lojista nem orçamento de tokens (relevante para custo de LLM).
 - `config.ts` valida no import e chama `process.exit`; isso complica testes (veja `vitest.config.ts`).
+
+## Bug real encontrado em debug (não hipotético)
+
+Na primeira subida contra um Kafka vazio, `consumer.subscribe()` falha com `KafkaJSProtocolError: This server does not host this topic-partition` — uma corrida entre o `AUTO_CREATE_TOPICS_ENABLE=true` do broker e o pedido de metadata do KafkaJS, que chega antes da partição terminar de ser criada. Subir de novo resolve (o tópico já existe), mas derruba o processo na primeira tentativa. Não corrigido de propósito: é um exemplo real de como "funciona no `docker-compose up`" e "funciona de verdade" são coisas diferentes.

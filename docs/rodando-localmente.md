@@ -5,13 +5,13 @@ Este guia assume **Colima** (não Docker Desktop) e `nvm` disponíveis. Nenhuma 
 ## -1. Arquitetura: onde os containers realmente rodam
 
 ```
-seu Mac (host)
-  └─ Colima → VM Linux leve (driver "vz")
+host
+  └─ Colima → VM Linux leve (driver "vz" no macOS)
        └─ dentro da VM: o daemon Docker de verdade
             └─ dentro do Docker: os 5 containers (postgres, kafka, redis, localstack, jaeger)
 ```
 
-Por isso `postgres`/`kafka` **não aparecem** como processo nativo no Mac (`ps aux`, Activity Monitor) — rodam dentro do Linux da VM. O que faz tudo parecer local é o **port forwarding**: o Colima redireciona as portas do host (`localhost:5432`, etc.) pra dentro da VM, até o container. É por isso que `DATABASE_URL=postgres://lab:lab@localhost:5432/lab` funciona normalmente no `.env`.
+Por isso `postgres`/`kafka` **não aparecem** como processo nativo no host (`ps aux`, Activity Monitor) — rodam dentro do Linux da VM. O que faz tudo parecer local é o **port forwarding**: o Colima redireciona as portas do host (`localhost:5432`, etc.) pra dentro da VM, até o container. É por isso que `DATABASE_URL=postgres://lab:lab@localhost:5432/lab` funciona normalmente no `.env`.
 
 ### Dois ajustes de ambiente necessários nesta máquina
 
@@ -103,7 +103,7 @@ documents                              chunks
 
 `repasse.md` virou 2 chunks porque passa do `maxChars` (600) — o chunk `pos=1` começa repetindo os últimos 80 caracteres do `pos=0` (o `overlap`, de `chunkText` em `src/rag/chunk.ts`), pra nenhuma resposta perder contexto na fronteira entre chunks. `embedding` é `vector(256)`: com `LLM_PROVIDER=fake`, cada palavra do chunk cai num índice via hash MD5 (`fakeEmbed` em `src/llm/fake.ts`) — não é semântico de verdade, mas exercita pgvector/HNSW igual um embedding real exerceria.
 
-### Consultando o banco direto (sem instalar `psql` no Mac)
+### Consultando o banco direto (sem instalar `psql` localmente)
 
 Sem cliente Postgres instalado localmente, o jeito mais simples é abrir um `psql` **dentro do próprio container**:
 
@@ -124,7 +124,7 @@ select id, left(embedding::text, 60) from chunks;  -- vector NÃO suporta [1:5]:
 \q
 ```
 
-Ou direto do terminal do Mac, sem entrar no modo interativo:
+Ou direto do terminal do host, sem entrar no modo interativo:
 
 ```bash
 docker exec merchant-support-lab-postgres-1 \
@@ -216,12 +216,12 @@ npm test                     # vitest run — retry, backoff, RRF, chunking, gua
 npm run infra:down           # docker compose down -v — remove containers E volumes (banco zera)
 ```
 
-## Checklist de exercícios (ordem sugerida)
+## Cenários de resiliência que o projeto demonstra
 
-- [ ] `npm test` sem infra nenhuma — leia `test/retry.test.ts` e quebre algo de propósito.
-- [ ] Suba a infra, faça `POST /dev/orders` até a linha aparecer no Postgres.
-- [ ] Mate o consumer no meio (`Ctrl+C` no debug), republique o mesmo `eventId`, confirme que não duplicou.
-- [ ] Force a DLQ com um payload inválido e leia o tópico `.dlq`.
-- [ ] Pare o Postgres (`docker compose stop postgres`) com a API no ar e observe retry → backoff → DLQ.
-- [ ] Rode o eval, mude `maxChars` em `src/rag/chunk.ts`, rode o eval de novo e compare a taxa.
-- [ ] Troque para `LLM_PROVIDER=anthropic` com uma chave real e observe o `usage` nos logs.
+Cada um dos passos acima isola uma garantia específica do sistema — seguidos em ordem, eles validam o comportamento sob falha, não só o caminho feliz:
+
+- **Sem infra nenhuma**, `npm test` já cobre retry/backoff, RRF, chunking e guardrails — a lógica de negócio não depende de broker, banco nem fila pra ser testada.
+- **Idempotência real**: republicar o mesmo `eventId` depois que o pedido já foi processado não duplica a linha no Postgres — o `claim`/`release` no Redis barra o reprocesso antes de chegar no banco.
+- **DLQ sem travar a partição**: um payload que falha na validação do Zod (poison pill) vai direto pro tópico `.dlq`, sem bloquear as mensagens seguintes.
+- **Degradação controlada**: parar o Postgres com a API no ar expõe o ciclo completo — retry com backoff exponencial, esgotamento de tentativas, e por fim a DLQ — sem o processo cair.
+- **RAG mensurável**: mudar `maxChars` em `src/rag/chunk.ts` e comparar o eval antes/depois mostra que a qualidade de resposta de um RAG é uma métrica, não uma impressão.
