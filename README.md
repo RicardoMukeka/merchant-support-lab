@@ -90,6 +90,4 @@ Guia completo passo a passo (infra, debug, queries no banco, teste de idempotên
 - Sem rate limit por lojista nem orçamento de tokens (relevante para custo de LLM).
 - `config.ts` valida no import e chama `process.exit`; isso complica testes (veja `vitest.config.ts`).
 
-## Bug real encontrado em debug (não hipotético)
-
-Na primeira subida contra um Kafka vazio, `consumer.subscribe()` falha com `KafkaJSProtocolError: This server does not host this topic-partition` — uma corrida entre o `AUTO_CREATE_TOPICS_ENABLE=true` do broker e o pedido de metadata do KafkaJS, que chega antes da partição terminar de ser criada. Subir de novo resolve (o tópico já existe), mas derruba o processo na primeira tentativa. Não corrigido de propósito: é um exemplo real de como "funciona no `docker-compose up`" e "funciona de verdade" são coisas diferentes.
+Achado de debug contra o Kafka real (corrida na primeira criação automática do tópico, causa raiz confirmada via logs): ver [`docs/rodando-localmente.md`](docs/rodando-localmente.md#achado-de-debug-corrida-na-primeira-criação-do-tópico).

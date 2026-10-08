@@ -216,6 +216,33 @@ npm test                     # vitest run — retry, backoff, RRF, chunking, gua
 npm run infra:down           # docker compose down -v — remove containers E volumes (banco zera)
 ```
 
+## Achado de debug: corrida na primeira criação do tópico
+
+Na primeira subida de `lab: API (tsx)` contra um Kafka recém-criado, `consumer.subscribe()` (chamado por `startOrdersConsumer()`, dentro de `src/server.ts`, antes da API ficar pronta) falhou com:
+
+```
+KafkaJSProtocolError: This server does not host this topic-partition
+```
+
+Causa raiz, confirmada nos logs do próprio container (`docker compose logs kafka`):
+
+```
+15:25:20,889  Sent auto-creation request for Set(lab.orders.v1) to the active controller.
+15:25:20,959  [ReplicaFetcherManager] Removed fetcher for partitions Set(lab.orders.v1-0)
+15:25:20,981  Created log for partition lab.orders.v1-0 ...
+15:25:20,983  [Partition lab.orders.v1-0] Log loaded for partition lab.orders.v1-0 with initial high watermark 0
+```
+
+O `docker-compose.yml` liga `KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"`: quando o consumer pede metadata de um tópico inexistente, o broker cria o tópico ali na hora, como efeito colateral do próprio pedido. O broker respondeu "não tenho essa partição" no instante exato em que ela ainda estava sendo criada — os 4 passos acima levam ~94ms (de `.889` a `.983`), e o KafkaJS não teve retry suficiente pra cobrir essa janela.
+
+**Como confirmei que era isso, não outra coisa:**
+1. `docker exec ... kafka-topics.sh --list` → o tópico já existia.
+2. Subi `server.ts` de novo, nenhuma mudança no código → subiu limpo (`"API no ar"`), sem erro.
+
+**Por que não é um bug do código do projeto**: é um comportamento conhecido de Kafka com auto-create ligado, só aparece na primeira vez que alguém toca um tópico novo. Em produção, tópicos normalmente são criados explicitamente via infra-as-code **antes** de qualquer consumer subir — essa corrida simplesmente não existe nesse cenário. O `AUTO_CREATE_TOPICS_ENABLE=true` aqui é conveniência de ambiente de estudo, não config de produção.
+
+**Correção real** (não aplicada de propósito, documentada como achado): criar os tópicos antecipadamente (script/Terraform) antes do deploy do consumer, ou configurar retry específico pro erro `UNKNOWN_TOPIC_OR_PARTITION` na fase de `subscribe`.
+
 ## Cenários de resiliência que o projeto demonstra
 
 Cada um dos passos acima isola uma garantia específica do sistema — seguidos em ordem, eles validam o comportamento sob falha, não só o caminho feliz:
