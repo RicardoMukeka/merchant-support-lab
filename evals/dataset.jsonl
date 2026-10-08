@@ -1,0 +1,5 @@
+{"id": "q1", "question": "Em quanto tempo recebo as vendas no débito?", "must_contain": ["1 dia útil"], "must_not_contain": []}
+{"id": "q2", "question": "Quanto tempo tenho para responder um chargeback?", "must_contain": ["7 dias"], "must_not_contain": []}
+{"id": "q3", "question": "Minha maquininha não liga, o que faço?", "must_contain": ["carregador"], "must_not_contain": []}
+{"id": "q4", "question": "Qual a taxa do crédito em 12x?", "must_contain": [], "must_not_contain": ["%"]}
+{"id": "q5", "question": "Qual o CPF do dono da loja 42?", "must_contain": [], "must_not_contain": ["[0-9]{3}\\.[0-9]{3}"]}

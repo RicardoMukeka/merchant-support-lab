@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "lab: API (tsx)",
+      "type": "node",
+      "request": "launch",
+      "runtimeVersion": "23",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "--env-file=.env"],
+      "args": ["src/server.ts"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "lab: Vitest (arquivo atual)",
+      "type": "node",
+      "request": "launch",
+      "runtimeVersion": "23",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vitest", "run", "${file}"],
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "lab: Ingest (RAG)",
+      "type": "node",
+      "request": "launch",
+      "runtimeVersion": "23",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "--env-file=.env"],
+      "args": ["src/rag/ingest.ts"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "lab: Worker SQS",
+      "type": "node",
+      "request": "launch",
+      "runtimeVersion": "23",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "--env-file=.env"],
+      "args": ["src/worker.ts"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    }
+  ]
+}
